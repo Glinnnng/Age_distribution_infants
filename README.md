@@ -1,1 +1,2 @@
-Study of The risk for respiratory syncytial virus associated hospitalisation by chronological month of age and by birth month in infants: a global systematic analysis and development of an online prediction tool
+# Study of The risk for respiratory syncytial virus associated hospitalisation by chronological month of age and by birth month in infants: a global systematic analysis and development of an online prediction tool
+This project contains RSV seasonality data extracted from published literature and core R codes that were used for the paper "Ling Guo, et al. Respiratory syncytial virus seasonality, transmission zone, and implication for seasonal prevention strategy in China: a systematic analysis"
