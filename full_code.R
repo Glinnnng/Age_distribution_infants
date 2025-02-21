@@ -455,7 +455,7 @@ paramSummary_PCR$Group <- factor(paramSummary_PCR$Group,levels =c("H","UM","LM",
 
 genAgePlots(inputdata = paramSummary_PCR,type ="Income",analysis="PCR") 
 
-# Exclude studies with total quality scores less than 6
+#### Exclude studies with total quality scores less than 6
 Quality <- read_excel("SCEQ_v4.2.xlsx", sheet = "Quality Assessment") %>% dplyr::select(Study_ID,Score_total)
 df.IP.High <- df.IP %>% left_join(Quality) %>% filter(Score_total>=6)
 
