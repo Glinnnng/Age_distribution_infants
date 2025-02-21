@@ -1,12 +1,12 @@
 #rm(list=ls())
-# Please confirm that the following  packages have been installed.
-library(readxl)
-library(MCMCpack)
-library(progress)
-library(coda)
-library(ggplot2)
-library(tidyverse)
-
+# Please confirm that the following packages have been installed.
+require(readxl)
+require(MCMCpack)
+require(progress)
+require(coda)
+require(ggplot2)
+require(tidyverse)
+setwd("working example for illustration")
 
 #### This is a working example for illustration using simulation data, which allows to run the core code of Bayesian model.####
 
@@ -18,7 +18,7 @@ df <- read_excel("simulation data.xlsx", sheet = "Sheet1")
 # 1.1 Estimating RSV hospitalisation by chronological month of age----
 
 set.seed(1114)
-n.iteration <- 600
+n.iteration <- 600 # Note this is deliberately set to a relatively small number.
 n.burnin <- 100
 n.thin <- 5
 source("example_function.R")
