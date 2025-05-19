@@ -8,7 +8,7 @@ library(ggplot2)
 library(tidyverse)
 library(rgdal)
 library(ggpubr)
-
+library(extraDistr)
 #### Considering the data licences, only the full code is shown here without the corresponding data. 
 #### We have given simulation data in the 'working example for illustration' file, which allows to run the core code of Bayesian model.
 
@@ -48,19 +48,32 @@ for (i in 1:nrow(LocationInfo)) {
 }
 df.IP <- df.IP %>% left_join(LocationInfo[,c("Study_ID","lat_group")],multiple = "first")
 df.IP$Income_lat <- paste(df.IP$Income,df.IP$lat_group,sep = "_")
+####0.1 Estimated the value of alpha----
+# install.packages("DirichletReg")
+AgeDistr_12 <- df.IP %>% filter(N_subAge==12)
+AgeDistr_12 <- do.call(rbind,by(AgeDistr_12, AgeDistr_12$Study_ID, function(x) {x$proportion = x$RSV_count/sum(x$RSV_count); return(x)}))
+Dirichlet_data <- AgeDistr_12[,c(1,4,15,19,30,33,34,35)] %>% pivot_wider(names_from = Age_end,names_prefix = "p",values_from = proportion)
+Dirichlet_dataH <- Dirichlet_data %>% filter(Income=="H")
+Dirichlet_matrixH <- DR_data(Dirichlet_dataH[,7:18])
 
-# 1.1 Estimating RSV hospitalisation by chronological month of age----
+Dirichlet_fitH <- DirichReg(Dirichlet_matrixH ~ 1, model = "common")
+summary(Dirichlet_fitH)
 
+alpha_estimated <- as.data.frame(coef(Dirichlet_fitH))
+alpha_estimated <- exp(alpha_estimated) 
+alpha0_estimated <- sum(alpha_estimated)
+print(alpha0_estimated)
+
+#1.1 Estimating RSV hospitalisation by chronological month of age----
 set.seed(1114)
 n.iteration <- 6000
 n.burnin <- 1000
 n.thin <- 10
 source("full_function.R")
-
 #### Age distribution stratified by income level (income level in the median year of the study)
-
+set.seed(1114)
 paramSummary_Income <- do.call(rbind, by(df.IP, df.IP$Income, function(data) {
-  genRes(inputdata = data, Group = data$Income[1], n.iteration = n.iteration, n.burnin = n.burnin, n.thin = n.thin)
+  genRes(inputdata = data, Group = data$Income[1], n.iteration = n.iteration, n.burnin = n.burnin, n.thin = n.thin, k_init = 10000)
 }))
 
 paramSummary_Income$Group <- factor(paramSummary_Income$Group,levels =c("H","UM","LM","L"),labels=c("HICs","UMICs","LMICs/LICs","LICs"))
@@ -85,7 +98,7 @@ ggsave(ggplot(data=paramSummary_Income, aes(x=parameter, y=param_cumsum.est, ymi
 #### Age distribution stratified by latitude
 set.seed(1115)
 paramSummary_Lat <- do.call(rbind,by(df.IP,df.IP$lat_group,function(data) {
-  genRes(inputdata = data, Group = data$lat_group[1], n.iteration = n.iteration, n.burnin = n.burnin, n.thin = n.thin)
+  genRes(inputdata = data, Group = data$lat_group[1], n.iteration = n.iteration, n.burnin = n.burnin, n.thin = n.thin, k_init = 10000)
 }))
 
 paramSummary_Lat$Group <- factor(paramSummary_Lat$Group,levels =
@@ -97,7 +110,7 @@ genAgePlots(inputdata = paramSummary_Lat,type ="regions",analysis = "main") #plo
 #### Simultaneously by country income and latitudinal group
 set.seed(1116)
 paramSummary_Income.Lat <- do.call(rbind,by(df.IP,df.IP$Income_lat,function(data) {
-  genRes(inputdata = data, Group = data$Income_lat[1], n.iteration = n.iteration, n.burnin = n.burnin, n.thin = n.thin)
+  genRes(inputdata = data, Group = data$Income_lat[1], n.iteration = n.iteration, n.burnin = n.burnin, n.thin = n.thin, k_init = 10000)
 }))
 
 paramSummary_Income.Lat$Income <- sapply(strsplit(as.character(paramSummary_Income.Lat$Group), "_"), function(x) x[1])
@@ -248,34 +261,36 @@ ggsave(ggplot(data = CorTest2, aes(x = byAge.label, y = correlation, color=group
 
 
 
-#3.1 Predicting RSV hospitalisation by birth month----
+#3 Predicting RSV hospitalisation by birth month----
 
 # Nationwide data only
 SeasonData <- read_excel("Seasonality.xlsx", sheet = "Sheet1")
 Country_location <- read_excel("Country_location.xlsx", sheet = "Sheet1")
 ValidationData_nationwide <- ValidationData_wide %>% filter(Site=="Nationwide") %>% dplyr::select(Country,Income,Jan:Dec)
 NationalSeasonData <- SeasonData %>% filter(Region=="nationwide") %>% dplyr::select(Country,Income,Jan:Dec) %>% rbind(ValidationData_nationwide)
-
-# Predicting RSV hospitalisation by birth month
-set.seed(3111)
-BirthResSummary <- genCountryBirthRes(NationalSeasonData)
-BirthResSummary <- BirthResSummary %>% left_join(Country_location,by="Country",multiple="any")
-BirthResSummary$lat_group <- NA
-for (i in 1:nrow(BirthResSummary)) {
-  if (!is.na(BirthResSummary[i, "lat"])) {
-    if (BirthResSummary[i, "lat"] > 35) {
-      BirthResSummary[i, "lat_group"] <- "Temperate_region"
-    } else if (BirthResSummary[i, "lat"] < 35 & BirthResSummary[i, "lat"] > 23.5) {
-      BirthResSummary[i, "lat_group"] <- "Subtropical_region"
-    } else if (BirthResSummary[i, "lat"] < 23.5 & BirthResSummary[i, "lat"] > -23.5) {
-      BirthResSummary[i, "lat_group"] <- "Tropical_region"
-    } else if (BirthResSummary[i, "lat"] < -23.5& BirthResSummary[i, "lat"] > -35) {
-      BirthResSummary[i, "lat_group"] <- "Subtropical_region"
-    }else if (BirthResSummary[i, "lat"] < -35) {
-      BirthResSummary[i, "lat_group"] <- "Temperate_region"
+NationalSeasonData <- NationalSeasonData %>% left_join(Country_location,by="Country",multiple="any")
+NationalSeasonData$lat_group <- NA
+for (i in 1:nrow(NationalSeasonData)) {
+  if (!is.na(NationalSeasonData[i, "lat"])) {
+    if (NationalSeasonData[i, "lat"] > 35) {
+      NationalSeasonData[i, "lat_group"] <- "Temperate_region"
+    } else if (NationalSeasonData[i, "lat"] < 35 & NationalSeasonData[i, "lat"] > 23.5) {
+      NationalSeasonData[i, "lat_group"] <- "Subtropical_region"
+    } else if (NationalSeasonData[i, "lat"] < 23.5 & NationalSeasonData[i, "lat"] > -23.5) {
+      NationalSeasonData[i, "lat_group"] <- "Tropical_region"
+    } else if (NationalSeasonData[i, "lat"] < -23.5& NationalSeasonData[i, "lat"] > -35) {
+      NationalSeasonData[i, "lat_group"] <- "Subtropical_region"
+    }else if (NationalSeasonData[i, "lat"] < -35) {
+      NationalSeasonData[i, "lat_group"] <- "Temperate_region"
     }
   }
 }
+
+# Predicting RSV hospitalisation by birth month
+# Risk ratios between the birth months with the highest and lowest cumulative RSV hospitalisation proportions----
+# for the first 6 months of life and for the first year of life
+set.seed(3111)
+BirthResSummary <- genCountryBirthRes(NationalSeasonData)
 BirthResSummary$IC <- factor(BirthResSummary$IC,levels =c("H","UM","LM","L"),labels=c("HICs","UMICs","LMICs","LICs"))
 BirthResSummary$IC_group <- NA
 BirthResSummary$IC_group <- ifelse(BirthResSummary$IC %in% c("LMICs","LICs"), "LMICs-LICs",as.character(BirthResSummary$IC))
@@ -346,40 +361,6 @@ plot1 <- ggplot() +
 plot_legend <- get_legend(plot1)
 plot_legend <- as_ggplot(plot_legend)
 ggsave(plot_legend, filename = paste("results/","predict_AgeBirth","_","legend",".pdf",sep = ""), width = 24, height = 1)
-
-
-
-#3.2 Risk ratios between the birth months with the highest and lowest cumulative RSV hospitalisation proportions----
-# for the first 6 months of life and for the first year of life
-
-# risk ratio for each country
-set.seed(3112)
-CountriesBirthResSummary612 <- do.call(rbind,by(NationalSeasonData,NationalSeasonData$Country,function(x){
-  res <- genBirthRes(IC=x$Income,Seasonality_each=as.matrix(x[,c(3:14)]))
-  res$Country <- x$Country
-  return(res)
-})) %>% filter(byAge.label==6 |byAge.label==12)
-CountriesBirthResSummary612 <- CountriesBirthResSummary612 %>% left_join(BirthResSummary[,c(9:14)],by="Country",multiple="any") 
-country.ratio <- do.call(rbind,by(CountriesBirthResSummary612,CountriesBirthResSummary612$Country,genBirthRes.Ratio.country ))
-country.ratio.summary <- country.ratio %>% group_by(Country,byAge.label) %>%
-  dplyr::summarise(ratio.est = median(ratio),
-                   ratio.lci = quantile(ratio, 0.025),
-                   ratio.uci = quantile(ratio, 0.975)
-  )
-
-country.ratio.summary$ratio_95CrI <- paste(round(country.ratio.summary$ratio.est,2)," (",round(country.ratio.summary$ratio.lci,2),"-",
-                                          round(country.ratio.summary$ratio.uci,2),")",sep ="" )
-
-# risk ratio by latitude group
-# It is necessary to obtain risk ratios for all samples (1500 samples) in all countries and then combined by latitude.
-RatioRes.summary.lat <- country.ratio %>% group_by(lat_group,byAge.label) %>%
-  dplyr::summarise(ratio.est = median(ratio),
-                   ratio.lci = quantile(ratio, 0.025),
-                   ratio.uci = quantile(ratio, 0.975)
-  )
-
-RatioRes.summary.lat$ratio_95CrI <- paste(round(RatioRes.summary.lat$ratio.est,2)," (",round(RatioRes.summary.lat$ratio.lci,2),"-",
-                                           round(RatioRes.summary.lat$ratio.uci,2),")",sep ="" )
 
 #4. Descriptive analysis----
 # observed data
@@ -455,7 +436,7 @@ paramSummary_PCR$Group <- factor(paramSummary_PCR$Group,levels =c("H","UM","LM",
 
 genAgePlots(inputdata = paramSummary_PCR,type ="Income",analysis="PCR") 
 
-#### Exclude studies with total quality scores less than 6
+# Exclude studies with total quality scores less than 6
 Quality <- read_excel("SCEQ_v4.2.xlsx", sheet = "Quality Assessment") %>% dplyr::select(Study_ID,Score_total)
 df.IP.High <- df.IP %>% left_join(Quality) %>% filter(Score_total>=6)
 
