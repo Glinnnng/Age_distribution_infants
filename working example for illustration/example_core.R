@@ -1,12 +1,12 @@
 #rm(list=ls())
-# Please confirm that the following packages have been installed.
-require(readxl)
-require(MCMCpack)
-require(progress)
-require(coda)
-require(ggplot2)
-require(tidyverse)
-setwd("working example for illustration")
+# Please confirm that the following  packages have been installed.
+library(readxl)
+library(MCMCpack)
+library(progress)
+library(coda)
+library(ggplot2)
+library(tidyverse)
+
 
 #### This is a working example for illustration using simulation data, which allows to run the core code of Bayesian model.####
 
@@ -18,7 +18,7 @@ df <- read_excel("simulation data.xlsx", sheet = "Sheet1")
 # 1.1 Estimating RSV hospitalisation by chronological month of age----
 
 set.seed(1114)
-n.iteration <- 600 # Note this is deliberately set to a relatively small number.
+n.iteration <- 600
 n.burnin <- 100
 n.thin <- 5
 source("example_function.R")
@@ -26,7 +26,7 @@ source("example_function.R")
 #### Age distribution stratified by income level (income level in the median year of the study)
 # This step may take a few minutes!
 paramSummary_Income <- do.call(rbind, by(df, df$Income_level, function(data) {
-  genRes(inputdata = data, Group = data$Income_level[1], n.iteration = n.iteration, n.burnin = n.burnin, n.thin = n.thin)
+  genRes(inputdata = data, Group = data$Income_level[1], n.iteration = n.iteration, n.burnin = n.burnin, n.thin = n.thin, k_init = 10000)
 }))
 
 paramSummary_Income$Group <- factor(paramSummary_Income$Group,levels =c("H","UM","LM","L"),labels=c("HICs","UMICs","LMICs/LICs","LICs"))
@@ -46,6 +46,6 @@ ggsave(ggplot(data=paramSummary_Income, aes(x=parameter, y=param_cumsum.est, ymi
                panel.background = element_blank(),
                axis.line.x = element_line(linetype=1,color="black",linewidth=0.25),
                axis.line.y = element_line(linetype=1,color="black",linewidth=0.25)),
-       filename = paste("results/","AgeDistribution_Income_cum",".pdf",sep = ""), width = 14, height = 7)
+       filename = paste("AgeDistribution_Income_cum",".pdf",sep = ""), width = 14, height = 7)
 
 
