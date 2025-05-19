@@ -66,7 +66,6 @@ alpha0_estimated <- sum(alpha_estimated)
 print(alpha0_estimated)
 
 #1.1 Estimating RSV hospitalisation by chronological month of age----
-set.seed(1114)
 n.iteration <- 6000
 n.burnin <- 1000
 n.thin <- 10
