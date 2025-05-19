@@ -24,6 +24,7 @@ metaData <- read_excel("SCEQ_v4.2.xlsx", sheet = "Cataloguing")%>%
 #data for main analysis
 df <- read_excel("SCEQ_v4.2.xlsx", sheet = "Extraction") 
 df <- df %>% filter(!is.na(Study_ID) & !(Study_ID %in% mixedID )) %>% left_join(metaData,by=c("Study_ID","m_analysis"))
+df$RSV_count <- round(df$RSV_count)
 df.IP <- df %>% filter(Setting=="Hospital"& m_analysis==1) 
 
 #Country and latitude/longitude information for each study
