@@ -10,9 +10,11 @@ genLikelihood_each <- function(each, param) {
       group = cut(1:12, c(0,each$Age_end), right = TRUE)
     ) %>% group_by(group) %>%
       dplyr::summarise(param_sum = sum(param))
-  ) 
-  return(dmultinom(each$RSV_count, prob = each$param_sum, log = TRUE))
-} 
+  )
+  alpha <- 100 * each$param_sum +1
+  likelihood <- extraDistr::ddirmnom(each$RSV_count, size = sum(each$RSV_count), alpha = alpha, log = TRUE) 
+  return(likelihood)
+}
 
 #### Calculate the sum of the likelihood of all studies
 genLikelihood <- function(inputdata, id = "Study_ID", param) {
@@ -20,47 +22,55 @@ genLikelihood <- function(inputdata, id = "Study_ID", param) {
 }
 
 #### Random walks on the parameters from a Dirichlet distribution parameterised based on the number of RSV cases of the data
-genProposal <- function(inputdata = inputdata, param, step_dirichlet = step_dirichlet) {
+genProposal <- function(inputdata = inputdata, param, i, k) {
   n <- sum(inputdata$RSV_count)
-  alpha_dirichlet <- param * n
-  alpha_dirichlet_update <- alpha_dirichlet + runif(12, -(n+12)*step_dirichlet, (n+12) * step_dirichlet)
-  alpha_dirichlet_update <- ifelse(alpha_dirichlet_update<1, 1, alpha_dirichlet_update)
-  return(as.vector(rdirichlet(1, alpha = alpha_dirichlet_update))) 
-} 
+  return(as.vector(gtools::rdirichlet(1, alpha = pmax(k * param, 1)))) 
+}
 
 #### Metropolis–Hasting’s algorithm for estimating model parameters
-genMH <- function(log_likelihood_function, initial_params, n_iterations, inputdata, step_dirichlet) {
+genMH <- function(log_likelihood_function, initial_params, n_iterations, inputdata, k_init) {
   chain <- matrix(NA, nrow = n_iterations, ncol = 12)
   chain[1, ] <- initial_params
   current_log_likelihood <- log_likelihood_function(param = initial_params, inputdata = inputdata)
   pb <- progress_bar$new(total = n_iterations, clear = TRUE, format = "  [:bar] :percent :etas")
   pb$tick()
+  k <- k_init
+  acceptance_count <- 0
   for (i in 2:n_iterations) {
-    proposal <- genProposal(inputdata = inputdata, param = chain[i-1,], step_dirichlet = step_dirichlet)
+    proposal <- genProposal(inputdata = inputdata, param = chain[i-1,], i = i, k = k)
     proposal_log_likelihood <- log_likelihood_function(param = proposal, inputdata = inputdata)
-    acceptance_ratio <- exp(proposal_log_likelihood - current_log_likelihood) 
-    if (runif(1) < acceptance_ratio) { 
+    acceptance_ratio <- exp(proposal_log_likelihood - current_log_likelihood)
+    if (runif(1) < acceptance_ratio) {
       chain[i, ] <- proposal
       current_log_likelihood <- proposal_log_likelihood
+      acceptance_count <- acceptance_count + 1
     } else {
       chain[i, ] <- chain[i - 1, ]
+    }
+    if (i %% 100 == 0) {
+      current_acceptance <- acceptance_count / 100
+      if (current_acceptance < 0.2) k <- k * 1.1
+      if (current_acceptance > 0.5) k <- k * 0.9
+      acceptance_count <- 0
+      print(paste("Iter", i, "k =", round(k), "Acceptance =", round(current_acceptance, 2)))
     }
     pb$tick()
   }
   return(chain)
-} 
+}
 #combine 3 chains
-genMH_C <- function(log_likelihood_function = genLikelihood, initial_params, n_iterations=6000, inputdata, step_dirichlet = 0.005) {
+genMH_C <- function(log_likelihood_function = genLikelihood, initial_params, n_iterations=6000, inputdata, k_init = k_init) { 
+  
   chain_1 <- genMH(initial_params = initial_params[[1]],log_likelihood_function = log_likelihood_function, n_iterations = n_iterations, 
-                   inputdata = inputdata, step_dirichlet = step_dirichlet)
+                   inputdata = inputdata, k_init = k_init)
   chain_1 <- cbind(chain_1,matrix(1,nrow = n_iterations,ncol = 1))
   colnames(chain_1) <- c("p1","p2","p3","p4","p5","p6","p7","p8","p9","p10","p11","p12","chain_index")
   chain_2 <- genMH(initial_params = initial_params[[2]],log_likelihood_function = log_likelihood_function, n_iterations = n_iterations, 
-                   inputdata = inputdata, step_dirichlet = step_dirichlet)
+                   inputdata = inputdata, k_init = k_init)
   chain_2 <- cbind(chain_2,matrix(2,nrow = n_iterations,ncol = 1))
   colnames(chain_2) <- c("p1","p2","p3","p4","p5","p6","p7","p8","p9","p10","p11","p12","chain_index")
   chain_3 <- genMH(initial_params = initial_params[[3]],log_likelihood_function = log_likelihood_function, n_iterations = n_iterations, 
-                   inputdata = inputdata, step_dirichlet = step_dirichlet)
+                   inputdata = inputdata, k_init = k_init)
   chain_3 <- cbind(chain_3,matrix(3,nrow = n_iterations,ncol = 1))
   colnames(chain_3) <- c("p1","p2","p3","p4","p5","p6","p7","p8","p9","p10","p11","p12","chain_index")
   result <- as.data.frame(rbind(chain_1,chain_2,chain_3))
@@ -73,8 +83,9 @@ genMH_C <- function(log_likelihood_function = genLikelihood, initial_params, n_i
 # in chain 1, all parameters were set to 1/12; 
 # in chain 2, the first six parameters (corresponding to 0-<6 months) were each set to 0.1, and the second six parameters (corresponding to 6-<12 months) were set to 0.4/6; 
 # in chain 3, the first six parameters were set to 0.4/6, and the second six parameters were set to 0.1.
-genRes <- function(inputdata, n.iteration, n.burnin, n.thin, Group){
-  chain_each <- genMH_C(inputdata=inputdata,initial_params = list(rep(1/12,12),c(rep(0.1, 6), rep(0.4/6,6)),c( rep(0.4/6,6), rep(0.1, 6))))
+genRes <- function(inputdata, n.iteration, n.burnin, n.thin, Group,k_init){
+  chain_each <- genMH_C(inputdata=inputdata,initial_params = list(rep(1/12,12),c(rep(0.1, 6), rep(0.4/6,6)),c( rep(0.4/6,6), rep(0.1, 6))),
+                        k_init=k_init )
   chain_each$chain_index <- as.factor(chain_each$chain_index)
   chain_each_long <- chain_each %>% pivot_longer(cols = p1:p12,names_to = "parameter", 
                                        names_prefix = "p")
@@ -158,8 +169,8 @@ genBirthEach <- function(byAge, byMonth) {
   res.matrix <- do.call(rbind,by(res.matrix, res.matrix$byBirthmonth.label, function(x) {x$p_cumsum = cumsum(x$p_combined); return(x)}))
   return(res.matrix)
 } 
-# Risks and cumulative risks for different birth months for all the 1500 samples
 
+# Risks and cumulative risks for different birth months for all the 1500 samples
 genBirthRes <- function(IC,Seasonality_each){
   if(IC=="H"){age_input <- thin_chain_H
   }else{if(IC=="UM"){age_input <- thin_chain_UM
@@ -183,7 +194,8 @@ genBirthRes <- function(IC,Seasonality_each){
     return(res)
   } 
   res.matrix.MC <- do.call(rbind, by(input_combined, input_combined$index_seq, genBirthmonthMC))
-  } 
+} 
+
 # Summary for the median and 95% credible interval
 genBirthRes.summary <- function(IC,Seasonality_each){
   res.matrix.MC <- genBirthRes(IC=IC,Seasonality_each=Seasonality_each)
@@ -286,15 +298,59 @@ genCorTest <-function(cor_data, value) {
 
 #3. Predicting RSV hospitalisation by birth month----
 
+#### Risk ratios between the birth months with the highest and lowest cumulative RSV hospitalisation proportions for different month of age
+# Risk ratio for each country
+genBirthRes.Ratio.country <-function(x){
+  res.matrix.max <- x %>% group_by(byAge.label,index_seq) %>% filter(p_cumsum==max(p_cumsum)) %>% ungroup()
+  res.matrix.min <- x %>% group_by(byAge.label,index_seq) %>% filter(p_cumsum==min(p_cumsum)) %>% ungroup()
+  res.matrix.ratio <-res.matrix.max %>%  left_join(res.matrix.min,by = c("byAge.label", "index_seq","Country", "IC", "lat_group")) %>% 
+    mutate(ratio=p_cumsum.x/p_cumsum.y) %>% ungroup()
+  return(res.matrix.ratio )
+}
+
 genCountryBirthRes <- function(seasonality_each){
-  genBirthResEach <- function(seasonality){
-    res <- genBirthRes.summary(IC=seasonality$Income, Seasonality_each=as.matrix(seasonality[,c(3:14)]))
-    res$Country <- seasonality$Country
+  
+  #Predicting RSV hospitalisation by birth month (12*12*1500)
+  CountriesBirthRes <- do.call(rbind,by(seasonality_each,seasonality_each$Country,function(x){
+    res <- genBirthRes(IC=x$Income,Seasonality_each=as.matrix(x[,c(3:14)]))
+    res$Country <- x$Country
+    res$IC <- x$Income
+    res$lat_group <- x$lat_group
     return(res)
-  }
-  CountryRes <- do.call(rbind,by(seasonality_each, seasonality_each$Country, genBirthResEach))
-  return(CountryRes)
-} 
+  }))
+  CountriesBirthRes612 <-CountriesBirthRes %>% filter(byAge.label==6 |byAge.label==12)
+  
+  # risk ratio for each country
+  country.ratio <- do.call(rbind,by(CountriesBirthRes612,CountriesBirthRes612$Country,genBirthRes.Ratio.country ))
+  country.ratio.summary <- country.ratio %>% group_by(lat_group,Country,byAge.label) %>%
+    dplyr::summarise(ratio.est = median(ratio),
+                     ratio.lci = quantile(ratio, 0.025),
+                     ratio.uci = quantile(ratio, 0.975)
+    )
+  
+  country.ratio.summary$ratio_95CrI <- paste(round(country.ratio.summary$ratio.est,2)," (",round(country.ratio.summary$ratio.lci,2),"-",
+                                             round(country.ratio.summary$ratio.uci,2),")",sep ="" )
+  write.csv(country.ratio.summary,"result_revised/country.ratio.summary.csv")#出生月风险比值比
+  # risk ratio by latitude group
+  RatioRes.summary.lat <- country.ratio %>% group_by(lat_group,byAge.label) %>%
+    dplyr::summarise(ratio.est = median(ratio),
+                     ratio.lci = quantile(ratio, 0.025),
+                     ratio.uci = quantile(ratio, 0.975)
+    )
+  RatioRes.summary.lat$ratio_95CrI <- paste(round(RatioRes.summary.lat$ratio.est,2)," (",round(RatioRes.summary.lat$ratio.lci,2),"-",
+                                            round(RatioRes.summary.lat$ratio.uci,2),")",sep ="" )
+  write.csv(RatioRes.summary.lat,"result_revised/RatioRes.summary.lat.csv")#出生月风险比值比 
+  
+  Res.summary <- CountriesBirthRes %>% group_by(lat_group,IC,Country,byBirthmonth.label, byAge.label) %>% 
+    dplyr::summarise(p_combined.est = median(p_combined),
+                     p_combined.lci = quantile(p_combined, 0.025),
+                     p_combined.uci = quantile(p_combined, 0.975),
+                     p_cumsum.est = median(p_cumsum),
+                     p_cumsum.lci = quantile(p_cumsum, 0.025),
+                     p_cumsum.uci = quantile(p_cumsum, 0.975)
+    )
+  return(Res.summary)
+}
 
 # Predicted cumulative proportion of RSV hospitalisations in the first six month of life and first year of life by birth month
 # and proportion of RSV hospitalisations by calendar month
@@ -350,16 +406,7 @@ genAgeBirthPlot_lat <- function(predict_data){
          filename = paste("results/","predict_AgeBirth","_",predict_data$lat_group[1],".pdf",sep = ""), width = 24, height = ceiling(n_distinct(predict_data$Country) / 6)*3.8)
 } 
 
-#### Risk ratios between the birth months with the highest and lowest cumulative RSV hospitalisation proportions for different month of age
 
-# Risk ratio for each country
-genBirthRes.Ratio.country <-function(x){
-  res.matrix.max <- x %>% group_by(byAge.label,index_seq) %>% filter(p_cumsum==max(p_cumsum)) %>% ungroup()
-  res.matrix.min <- x %>% group_by(byAge.label,index_seq) %>% filter(p_cumsum==min(p_cumsum)) %>% ungroup()
-  res.matrix.ratio <-res.matrix.max %>%  left_join(res.matrix.min,by = c("byAge.label", "index_seq","Country", "IC", "lat", "long", "lat_group", "IC_group")) %>% 
-    mutate(ratio=p_cumsum.x/p_cumsum.y) %>% ungroup()
-  return(res.matrix.ratio )
-}
 
 
 
