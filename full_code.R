@@ -394,8 +394,8 @@ ggsave(ggplot(data=AgeDistr_years, aes(x=Age, y=proportion, color=factor(Year)))
        filename = paste("results/years_age",".pdf",sep = ""), width = 8, height = 9 )
 
 #### Summary of peak month of age with highest RSV hospitalisation proportion
-AgeDistr_12 <- df.IP %>% filter(N_subAge==12)
-AgeDistr_12 <- do.call(rbind,by(AgeDistr_12, AgeDistr_12$Study_ID, function(x) {x$proportion = x$RSV_count/sum(x$RSV_count); return(x)}))
+#AgeDistr_12 <- df.IP %>% filter(N_subAge==12)
+#AgeDistr_12 <- do.call(rbind,by(AgeDistr_12, AgeDistr_12$Study_ID, function(x) {x$proportion = x$RSV_count/sum(x$RSV_count); return(x)}))
 peakMonth12 <- AgeDistr_12  %>%
   group_by(Study_ID) %>% arrange(desc(proportion),by_group=TRUE) %>% 
   slice(1) 
@@ -429,20 +429,20 @@ df.IP.PCR <- df %>% filter(Setting=="Hospital"& s_analysis==1)
 
 set.seed(1117)
 paramSummary_PCR <- do.call(rbind, by(df.IP.PCR, df.IP.PCR$Income, function(data) {
-  genRes2(inputdata = data, Group = data$Income[1], n.iteration = n.iteration, n.burnin = n.burnin, n.thin = n.thin,analysis="PCR")
+  genRes2(inputdata = data, Group = data$Income[1], n.iteration = n.iteration, n.burnin = n.burnin, n.thin = n.thin,analysis="PCR", k_init = 10000)
 }))
 
 paramSummary_PCR$Group <- factor(paramSummary_PCR$Group,levels =c("H","UM","LM","L"),labels=c("HICs","UMICs","LMICs/LICs","LICs"))
 
 genAgePlots(inputdata = paramSummary_PCR,type ="Income",analysis="PCR") 
 
-# Exclude studies with total quality scores less than 6
+#### Exclude studies with total quality scores less than 6
 Quality <- read_excel("SCEQ_v4.2.xlsx", sheet = "Quality Assessment") %>% dplyr::select(Study_ID,Score_total)
 df.IP.High <- df.IP %>% left_join(Quality) %>% filter(Score_total>=6)
 
 set.seed(1118)
 paramSummary_High <- do.call(rbind, by(df.IP.High, df.IP.High$Income, function(data) {
-  genRes2(inputdata = data, Group = data$Income[1], n.iteration = n.iteration, n.burnin = n.burnin, n.thin = n.thin,analysis="High")
+  genRes2(inputdata = data, Group = data$Income[1], n.iteration = n.iteration, n.burnin = n.burnin, n.thin = n.thin,analysis="High", k_init = 10000)
 }))
 
 paramSummary_High$Group <- factor(paramSummary_High$Group,levels =c("H","UM","LM","L"),labels=c("HICs","UMICs","LMICs/LICs","LICs"))
