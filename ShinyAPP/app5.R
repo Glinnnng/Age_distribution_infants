@@ -16,7 +16,7 @@ load("thin_chain.RData")
 load("World_ICdata.RData")
 # Define UI ----
 ui <- fluidPage(
-  #设置页边距
+
   tags$head(
     tags$style(HTML("
       .input-title {
@@ -34,7 +34,7 @@ ui <- fluidPage(
       }
     "))
   ),
-  #标题作者加logo
+
   fluidRow(
     column(8,
            tags$h1("Predicting population-level distribution of infant RSV hospitalisation at different months of age by birth month", class = "blue-title"),
@@ -47,7 +47,7 @@ ui <- fluidPage(
     )
     
   ),
-  #内容说明
+
   div(h3("Introduction"),style="color:#437194"),
   p("This prediction tool is for understanding how infant RSV hospitalisation was distributed across different months of age 
     by month of birth. The prediction results can be used for identifying high-risk birth cohorts and high-risk chronological age windows 
@@ -65,7 +65,7 @@ ui <- fluidPage(
       style = "color:green"),
 
   br(),
-  #输入和输出
+
     h3("Input", class = "input-title"),
     selectInput("Country",h4("Select Country"),
                     choices = World_ICdata$region,
@@ -126,7 +126,7 @@ ui <- fluidPage(
 # Define server logic ----
 server <- function(input, output,session) {
   BirthmonthSummary <- reactive({
-    #整理国家季节性数据，添加收入水平
+
     seasonality <- as.integer(c(input$Jan, input$Feb, input$Mar,
                                 input$Apr, input$May, input$Jun,
                                 input$Jul, input$Aug, input$Sep,
@@ -195,13 +195,13 @@ server <- function(input, output,session) {
       }
     }
   })
-  # 获取用户输入的每个月份的病例数并转换为整数
+
   observeEvent(input$submit, {
     seasonality <- as.integer(c(input$Jan, input$Feb, input$Mar,
                                 input$Apr, input$May, input$Jun,
                                 input$Jul, input$Aug, input$Sep,
                                 input$Oct, input$Nov, input$Dec))
-    # 如果有缺失值
+
     if (any(is.na(seasonality))) {
       output$reminder <- renderText({
         "Please enter full details"
@@ -209,7 +209,7 @@ server <- function(input, output,session) {
       output$BirthmonthPlot <- renderPlot(NULL)
       output$downloadData <- downloadHandler(NULL)
     } else {
-      #没有缺失值判定总和是否小于100 
+
       if(sum(seasonality) < 100) {
         showModal(modalDialog(
           title = "Warning",
@@ -312,7 +312,7 @@ server <- function(input, output,session) {
     
   })
   
-  # 添加重置按钮功能
+
   observeEvent(input$reset, {
     
     output$reminder <- renderText({
